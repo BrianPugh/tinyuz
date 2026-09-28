@@ -167,11 +167,16 @@ bool heatshrink_decompress(unsigned char* out_data,unsigned char* out_data_end,
 #include "../tamp/tamp/_c_src/tamp/compressor.h"
 #include "../tamp/tamp/_c_src/tamp/decompressor.h"
 // Apache License Version 2.0 LICENSE
+// tamp v2.x; compile tamp's compressor.c,decompressor.c,common.c with -DTAMP_LAZY_MATCHING=1
 
 uint8_t tamp_windowBits =10; // [8--15]
 int tamp_compress(unsigned char* out_data,unsigned char* out_data_end,
                   const unsigned char* src,const unsigned char* src_end){
-    TampConf conf; conf.window=tamp_windowBits; conf.literal=8; conf.use_custom_dictionary=false;
+    TampConf conf; memset(&conf,0,sizeof(conf));
+    conf.window=tamp_windowBits; conf.literal=8; conf.extended=1;
+#if TAMP_LAZY_MATCHING
+    conf.lazy_matching=1;
+#endif
     unsigned char* buf = (unsigned char*)malloc(1<<conf.window);
     if (buf==0) return 0;
     TampCompressor c;
@@ -192,7 +197,7 @@ bool tamp_decompress(unsigned char* out_data,unsigned char* out_data_end,
     unsigned char* buf = (unsigned char*)malloc(1<<15);
     if (buf==0) return false;
     TampDecompressor d;
-    if (TAMP_OK!=tamp_decompressor_init(&d,NULL,buf))
+    if (TAMP_OK!=tamp_decompressor_init(&d,NULL,buf,15))
         return false;
     
     size_t output_size=0;
@@ -201,7 +206,7 @@ bool tamp_decompress(unsigned char* out_data,unsigned char* out_data_end,
          &output_size,zip_code,zip_code_end-zip_code,&input_size))
         return false;
     free(buf);
-    return true;
+    return output_size==(size_t)(out_data_end-out_data);
 }
 
 #endif //tinyuz_test_others_h
