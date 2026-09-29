@@ -23,7 +23,8 @@ namespace _tuz_private{
         explicit TMatch(const tuz_byte* data,const tuz_byte* data_end,
                         const TTuzCode& _coder,const tuz_TCompressProps& _props)
         :sstring(data,data_end,(TLCPInt)_props.maxSaveLength,_props.threadNum), coder(_coder),
-        props(_props){ }
+        props(_props),shortString(-1),shortGroupCount(0),
+        lenStamp(_props.maxSaveLength+1,0),lenStampCur(0){ _initMinDictLenBit(); }
         bool match(const tuz_byte** out_matched,size_t* out_match_len,
                    const tuz_byte* cur);
     private:
@@ -32,6 +33,29 @@ namespace _tuz_private{
         const tuz_TCompressProps&   props;
         std::vector<TPosInt>        dictPos;
         std::vector<TLCPInt>        matchLen;
+    public:
+        enum { kMaxShortPosCount=128 }; //bit count of a dict_pos mask
+    private:
+        struct TShortGroup{
+            TInt        eqEnd;
+            bool        isCapped;
+            uint64_t    mask[2]; //bit dict_pos
+        };
+        TInt                        shortString; //curString of the short pos match state
+        size_t                      shortGroupCount;
+        TShortGroup                 shortGroups[kMaxShortPosCount];
+        enum { kShortGroupHashSize=256 };
+        tuz_byte                    shortGroupHash[kShortGroupHashSize]; //eqEnd -> group index
+        uint64_t                    shortByteMask[256][2]; //bit dict_pos: src[shortByteMaskString-(dict_pos+1)]==byte
+        TInt                        shortByteMaskString[256];
+        TLCPInt                     shortMatchLen[kMaxShortPosCount];
+        std::vector<TUInt>          lenStamp; //lenStamp[mLen]==lenStampCur: mLen done by a short pos match
+        TUInt                       lenStampCur;
+        std::vector<TUInt>          minDictLenBit; //min bit count of mLen for a LCP match
+        void _updateShortMatch(const TInt curString,const TInt kShortPos,uint64_t* out_mask);
+        void _alignByteMask(tuz_byte v,TInt curString);
+        void _addShortGroup(TInt eqEnd,bool isCapped,size_t dict_pos);
+        void _initMinDictLenBit();
         void _cost_match(const TInt curString,const size_t curi,
                          size_t* out_maxMatchLen,std::vector<TUInt>& cost);
         void _initCost(std::vector<TUInt>& cost,size_t costSize);
