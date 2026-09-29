@@ -23,7 +23,8 @@ namespace _tuz_private{
         explicit TMatch(const tuz_byte* data,const tuz_byte* data_end,
                         const TTuzCode& _coder,const tuz_TCompressProps& _props)
         :sstring(data,data_end,(TLCPInt)_props.maxSaveLength,_props.threadNum), coder(_coder),
-        props(_props),shortEqLenString(-1),shortEqLenCount(0){ _initMinDictLenBit(); }
+        props(_props),shortEqLenString(-1),shortEqLenCount(0),
+        lenStamp(_props.maxSaveLength+1,0),lenStampCur(0){ _initMinDictLenBit(); }
         bool match(const tuz_byte** out_matched,size_t* out_match_len,
                    const tuz_byte* cur);
     private:
@@ -35,8 +36,11 @@ namespace _tuz_private{
         std::vector<TLCPInt>        shortEqLen; //cache for short pos match
         TInt                        shortEqLenString;
         size_t                      shortEqLenCount;
+        std::vector<TUInt>          lenStamp; //lenStamp[mLen]==lenStampCur: mLen done by a short pos match
+        TUInt                       lenStampCur;
         std::vector<TUInt>          minDictLenBit; //min bit count of mLen for a LCP match
-        void _updateShortEqLen(const TInt curString,const TInt kShortPos);
+        std::vector<TInt>           shortMatchList;
+        size_t _updateShortEqLen(const TInt curString,const TInt kShortPos);
         void _initMinDictLenBit();
         void _cost_match(const TInt curString,const size_t curi,
                          size_t* out_maxMatchLen,std::vector<TUInt>& cost);
