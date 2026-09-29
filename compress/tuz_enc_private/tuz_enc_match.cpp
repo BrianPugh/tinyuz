@@ -76,6 +76,7 @@ namespace _tuz_private{
             eqLens[dict_pos]=0;
         TInt* matchList=shortMatchList.data();
         size_t matchCount=0;
+        size_t lastEqLen=0;
         for (size_t dict_pos=0;dict_pos<shortCount;++dict_pos){
             size_t eqLen=eqLens[dict_pos];
             if (eqLen==0){
@@ -87,9 +88,13 @@ namespace _tuz_private{
                 eqLens[dict_pos]=(TLCPInt)eqLen;
             }
             if (eqLen>=tuz_kMinDictMatchLen){
-                if (eqLen>=_k_kBMatchStep) //a big match returns in _MatchedAt,
-                    matchCount=0;          //  so the smaller dict_pos after it are not matched.
+                if (eqLen>=_k_kBMatchStep){ //a big match returns in _MatchedAt,
+                    matchCount=0;           //  so the smaller dict_pos after it are not matched.
+                }else if (eqLen==lastEqLen){
+                    continue; //all done by the smaller dict_pos in matchList
+                }
                 matchList[matchCount++]=(TInt)dict_pos;
+                lastEqLen=eqLen;
             }
         }
         return matchCount;
