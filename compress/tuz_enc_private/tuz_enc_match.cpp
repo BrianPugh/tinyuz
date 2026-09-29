@@ -36,6 +36,49 @@ namespace _tuz_private{
         (*out_maxMatchLen)=((size_t)curMinLcp>(*out_maxMatchLen))?curMinLcp:(*out_maxMatchLen); \
         if (curMinLcp>=_k_kBMatchStep) return; }
     
+    //shortEqLen[dict_pos]: equal length of curString & curString-(dict_pos+1);
+    //  if the previous position's equal length e(>1) was not limited by maxSaveLength,
+    //  then the equal length at curString is e-1; else it is compared again.
+    void TMatch::_updateShortEqLen(const TInt curString,const TInt kShortPos){
+        const size_t shortCount=(size_t)kShortPos+1;
+        const size_t validCount=(shortEqLenString+1==curString)?shortEqLenCount:0;
+        if (shortEqLen.size()<shortCount) shortEqLen.resize(shortCount);
+        shortEqLenString=curString;
+        shortEqLenCount=shortCount;
+        const size_t maxSaveLength=props.maxSaveLength;
+        const tuz_byte* curStr=sstring.src+curString;
+        size_t maxEqLen=(size_t)(sstring.src_end-curStr);
+        if (maxEqLen>maxSaveLength) maxEqLen=maxSaveLength;
+        const tuz_byte curByte=*curStr;
+        TLCPInt* eqLens=shortEqLen.data();
+        size_t cappedCount=0;
+        for (size_t dict_pos=0;dict_pos<validCount;++dict_pos){
+            const size_t eqLen=eqLens[dict_pos];
+            cappedCount+=(eqLen>=maxSaveLength)?1:0;
+            eqLens[dict_pos]=(TLCPInt)((eqLen>1)?(eqLen-1):0);
+        }
+        if (cappedCount>0){ //compared again
+            for (size_t dict_pos=0;dict_pos<validCount;++dict_pos){
+                size_t eqLen=eqLens[dict_pos];
+                if (eqLen+1<maxSaveLength) continue;
+                const tuz_byte* matchedStr=curStr-(dict_pos+1);
+                while ((eqLen<maxEqLen)&&(curStr[eqLen]==matchedStr[eqLen]))
+                    ++eqLen;
+                eqLens[dict_pos]=(TLCPInt)eqLen;
+            }
+        }
+        for (size_t dict_pos=validCount;dict_pos<shortCount;++dict_pos)
+            eqLens[dict_pos]=0;
+        for (size_t dict_pos=0;dict_pos<shortCount;++dict_pos){
+            const tuz_byte* matchedStr=curStr-(dict_pos+1);
+            if ((eqLens[dict_pos]!=0)|(matchedStr[0]!=curByte)) continue;
+            size_t eqLen=1;
+            while ((eqLen<maxEqLen)&&(curStr[eqLen]==matchedStr[eqLen]))
+                ++eqLen;
+            eqLens[dict_pos]=(TLCPInt)eqLen;
+        }
+    }
+
     void TMatch::_initMinDictLenBit(){
         minDictLenBit.resize(_k_kBMatchStep);
         for (size_t mLen=0;mLen<_k_kBMatchStep;++mLen){
@@ -71,10 +114,10 @@ namespace _tuz_private{
         //#define _kShortPosForLen  (((1<<11)-1)-1) // better(0.2%) but slower(30%)
         const TInt kShortPos=(TInt)((maxDictPos>=_kShortPosForLen)?_kShortPosForLen:maxDictPos);
         {// short pos match
+            _updateShortEqLen(curString,kShortPos);
+            const TLCPInt* shortEqLen=this->shortEqLen.data();
             for (TInt dict_pos=kShortPos;dict_pos>=0;dict_pos--){
-                TInt matchedString=curString-(dict_pos+1);
-                TInt curMinLcp=_sstr_eqLen(sstring.src_end,props.maxSaveLength,
-                                           sstring.src+matchedString,sstring.src+curString);
+                TInt curMinLcp=shortEqLen[dict_pos];
                 if (curMinLcp>=tuz_kMinDictMatchLen)
                     _MatchedAt(false,dict_pos);
             }
