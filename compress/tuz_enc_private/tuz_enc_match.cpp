@@ -11,6 +11,11 @@ namespace _tuz_private{
 
     const TUInt kNullCostValue=~(TUInt)0;
     #define _k_kBMatchStep   512  // skip by a big match
+    #define _kShortPosForLen  (((1<<7)-1)-1)
+    //#define _kShortPosForLen  (((1<<11)-1)-1) // better(0.2%) but slower(30%)
+    #if (_kShortPosForLen>=((1<<7)-1))
+    #   error short pos match need all short pos saved with the same bit count
+    #endif
 
     static inline TInt _sstr_eqLen(const tuz_byte* ss_end,size_t maxSaveLength,
                             const  tuz_byte* matchedString,const tuz_byte* curString){
@@ -96,7 +101,7 @@ namespace _tuz_private{
         shortByteMaskString[v]=curString;
     }
     void TMatch::_addShortGroup(TInt eqEnd,bool isCapped,size_t dict_pos){
-        TShortGroup* groups=shortGroups.data();
+        TShortGroup* groups=shortGroups;
         const size_t hi=(size_t)eqEnd&(kShortGroupHashSize-1);
         size_t i=shortGroupHash[hi];
         if ((i<shortGroupCount)&&(groups[i].eqEnd==eqEnd)&&(groups[i].isCapped==isCapped)){
@@ -118,19 +123,14 @@ namespace _tuz_private{
         _setBit128(g.mask,dict_pos);
     }
 
-    //out shortMatchList & shortMatchLen: dict_pos (from big to small) & its equal length to match,
-    //  only the smallest dict_pos of a group; stop at a big match like _MatchedAt: it returns and
-    //  the next position is not curString+1.
-    size_t TMatch::_updateShortMatch(const TInt curString,const TInt kShortPos){
+    //out_mask: the dict_pos to match, the smallest one of each group (the others stop at once),
+    //  and shortMatchLen[dict_pos]; stop at a big match like _MatchedAt: it returns and the next
+    //  position is not curString+1.
+    void TMatch::_updateShortMatch(const TInt curString,const TInt kShortPos,uint64_t* out_mask){
         const tuz_byte* src=sstring.src;
         const TInt srcSize=(TInt)sstring.size();
         const TInt maxSaveLength=(TInt)props.maxSaveLength;
         const size_t shortCount=(size_t)kShortPos+1;
-        if (shortGroups.size()<shortCount){
-            shortGroups.resize(shortCount);
-            shortMatchList.resize(shortCount);
-            shortMatchLen.resize(shortCount);
-        }
         if (shortString+1!=curString){ //init
             shortGroupCount=0;
             memset(shortByteMask,0,sizeof(shortByteMask));
@@ -148,7 +148,7 @@ namespace _tuz_private{
 
         uint64_t active[2]={0,0};
         {//remove ended groups & compare capped group again
-            TShortGroup* groups=shortGroups.data();
+            TShortGroup* groups=shortGroups;
             size_t count=0;
             uint64_t capped[2]={0,0};
             TInt cappedEnd=0;
@@ -178,7 +178,7 @@ namespace _tuz_private{
         }
 
         TInt bigDictPos=-1; //the biggest dict_pos with a big match
-        TShortGroup* groups=shortGroups.data();
+        const TShortGroup* groups=shortGroups;
         for (size_t i=0;i<shortGroupCount;++i){
             const TShortGroup& g=groups[i];
             const TInt eqLen=(g.eqEnd-curString<maxSaveLength)?(g.eqEnd-curString):maxSaveLength;
@@ -225,9 +225,7 @@ namespace _tuz_private{
         if (bigDictPos>=0)
             shortString=-1; //not all updated
 
-        //out one dict_pos of each group, from big to small
-        uint64_t outMask[2]={0,0};
-        TLCPInt* outLens=shortOutLen;
+        out_mask[0]=0; out_mask[1]=0;
         for (size_t i=0;i<shortGroupCount;++i){
             const TShortGroup& g=groups[i];
             const TInt eqLen=(g.eqEnd-curString<maxSaveLength)?(g.eqEnd-curString):maxSaveLength;
@@ -243,22 +241,9 @@ namespace _tuz_private{
             }
             if ((m[0]|m[1])==0) continue;
             const size_t dict_pos=m[0]?_lowBit64(m[0]):(64+_lowBit64(m[1]));
-            _setBit128(outMask,dict_pos);
-            outLens[dict_pos]=(TLCPInt)eqLen;
+            _setBit128(out_mask,dict_pos);
+            shortMatchLen[dict_pos]=(TLCPInt)eqLen;
         }
-        TInt* matchList=shortMatchList.data();
-        TLCPInt* matchLens=shortMatchLen.data();
-        size_t matchCount=0;
-        for (size_t w=2;(w--)>0;){
-            while (outMask[w]){
-                const size_t dict_pos=w*64+_highBit64(outMask[w]);
-                outMask[w]&=~(((uint64_t)1)<<(dict_pos&63));
-                matchList[matchCount]=(TInt)dict_pos;
-                matchLens[matchCount]=outLens[dict_pos];
-                ++matchCount;
-            }
-        }
-        return matchCount;
     }
 
     void TMatch::_initMinDictLenBit(){
@@ -292,17 +277,11 @@ namespace _tuz_private{
 
         size_t maxDictPos=props.dictSize-1;
         if (maxDictPos>=(size_t)curString) maxDictPos=curString-1;
-        #define _kShortPosForLen  (((1<<7)-1)-1)
-        //#define _kShortPosForLen  (((1<<11)-1)-1) // better(0.2%) but slower(30%)
-        #if (_kShortPosForLen>=((1<<7)-1))
-        #   error short pos match need all short pos saved with the same bit count
-        #endif
         const TInt kShortPos=(TInt)((maxDictPos>=_kShortPosForLen)?_kShortPosForLen:maxDictPos);
         {// short pos match
-            const size_t matchCount=_updateShortMatch(curString,kShortPos);
-            const TInt* matchList=shortMatchList.data();
-            const TLCPInt* matchLens=shortMatchLen.data();
-            if (matchCount>0){
+            uint64_t matchMask[2];
+            _updateShortMatch(curString,kShortPos,matchMask);
+            if (matchMask[0]|matchMask[1]){
                 //all short pos have the same cost for the same mLen, so the one with the smallest dict_pos
                 //  that reaches a mLen is saved; match from small dict_pos to big and stop at a mLen
                 //  already done by a smaller dict_pos (below it, both make the same choices).
@@ -312,22 +291,25 @@ namespace _tuz_private{
                 }
                 const size_t curSaveCost=cost[curi-1]+coder.getSavedDictPosBit<false>(kShortPos,isHaveData);
                 TInt maxEqLen=0;
-                for (size_t i=matchCount;i-->0;){
-                    const TInt dict_pos=matchList[i];
-                    const TInt curMinLcp=matchLens[i];
-                    maxEqLen=(curMinLcp>maxEqLen)?curMinLcp:maxEqLen;
-                    for (TInt mLen=curMinLcp;mLen>=tuz_kMinDictMatchLen;--mLen){
-                        if (lenStamp[mLen]==lenStampCur) break;
-                        lenStamp[mLen]=lenStampCur;
-                        const size_t dictCost=curSaveCost+coder.getSavedDictLenBit<false>(mLen,dict_pos);
-                        const size_t ni=curi+mLen-1;
-                        const size_t cost_ni=cost[ni];
-                        if (dictCost<=cost_ni){
-                            cost[ni]=(TUInt)dictCost;
-                            matchLen[ni]=mLen;
-                            dictPos[ni]=(TPosInt)dict_pos;
-                        }else if (dictCost>cost_ni+4){
-                            break;
+                for (size_t w=0;w<2;++w){
+                    while (matchMask[w]){
+                        const TInt dict_pos=(TInt)(w*64+_lowBit64(matchMask[w]));
+                        matchMask[w]&=matchMask[w]-1;
+                        const TInt curMinLcp=shortMatchLen[dict_pos];
+                        maxEqLen=(curMinLcp>maxEqLen)?curMinLcp:maxEqLen;
+                        for (TInt mLen=curMinLcp;mLen>=tuz_kMinDictMatchLen;--mLen){
+                            if (lenStamp[mLen]==lenStampCur) break;
+                            lenStamp[mLen]=lenStampCur;
+                            const size_t dictCost=curSaveCost+coder.getSavedDictLenBit<false>(mLen,dict_pos);
+                            const size_t ni=curi+mLen-1;
+                            const size_t cost_ni=cost[ni];
+                            if (dictCost<=cost_ni){
+                                cost[ni]=(TUInt)dictCost;
+                                matchLen[ni]=mLen;
+                                dictPos[ni]=(TPosInt)dict_pos;
+                            }else if (dictCost>cost_ni+4){
+                                break;
+                            }
                         }
                     }
                 }

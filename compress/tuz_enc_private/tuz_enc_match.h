@@ -33,25 +33,26 @@ namespace _tuz_private{
         const tuz_TCompressProps&   props;
         std::vector<TPosInt>        dictPos;
         std::vector<TLCPInt>        matchLen;
+    public:
+        enum { kMaxShortPosCount=128 }; //bit count of a dict_pos mask
+    private:
         struct TShortGroup{
             TInt        eqEnd;
             bool        isCapped;
             uint64_t    mask[2]; //bit dict_pos
         };
         TInt                        shortString; //curString of the short pos match state
-        std::vector<TShortGroup>    shortGroups;
         size_t                      shortGroupCount;
-        uint64_t                    shortByteMask[256][2]; //bit dict_pos: src[shortByteMaskString-(dict_pos+1)]==byte
-        TInt                        shortByteMaskString[256];
-        std::vector<TLCPInt>        shortMatchLen;
-        TLCPInt                     shortOutLen[128];
+        TShortGroup                 shortGroups[kMaxShortPosCount];
         enum { kShortGroupHashSize=256 };
         tuz_byte                    shortGroupHash[kShortGroupHashSize]; //eqEnd -> group index
+        uint64_t                    shortByteMask[256][2]; //bit dict_pos: src[shortByteMaskString-(dict_pos+1)]==byte
+        TInt                        shortByteMaskString[256];
+        TLCPInt                     shortMatchLen[kMaxShortPosCount];
         std::vector<TUInt>          lenStamp; //lenStamp[mLen]==lenStampCur: mLen done by a short pos match
         TUInt                       lenStampCur;
         std::vector<TUInt>          minDictLenBit; //min bit count of mLen for a LCP match
-        std::vector<TInt>           shortMatchList;
-        size_t _updateShortMatch(const TInt curString,const TInt kShortPos);
+        void _updateShortMatch(const TInt curString,const TInt kShortPos,uint64_t* out_mask);
         void _alignByteMask(tuz_byte v,TInt curString);
         void _addShortGroup(TInt eqEnd,bool isCapped,size_t dict_pos);
         void _initMinDictLenBit();
