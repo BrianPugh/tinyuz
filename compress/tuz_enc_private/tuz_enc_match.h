@@ -33,6 +33,11 @@ namespace _tuz_private{
         std::vector<TPosInt>        dictPos;
         std::vector<TLCPInt>        matchLen;
         std::vector<TUInt>          minDictLenBit; //min bit count of mLen for a LCP match
+        std::vector<TInt>           shortEqEnd; //end of the equal run of each short pos
+        std::vector<TUInt>          lenStamp; //lenStamp[mLen]==curi: mLen done by a short pos
+        std::vector<TInt>           prevSameByte; //ring by pos: last pos with the same byte
+        std::vector<TInt>           lastSameByte;
+        TInt                        shortString; //chain is updated to it
         void _initMinDictLenBit();
         void _cost_match(const TInt curString,const size_t curi,
                          size_t* out_maxMatchLen,std::vector<TUInt>& cost);
