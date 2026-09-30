@@ -70,14 +70,58 @@ namespace _tuz_private{
         #define _kShortPosForLen  (((1<<7)-1)-1)
         //#define _kShortPosForLen  (((1<<11)-1)-1) // better(0.2%) but slower(30%)
         const TInt kShortPos=(TInt)((maxDictPos>=_kShortPosForLen)?_kShortPosForLen:maxDictPos);
+        #if (_kShortPosForLen>=((1<<7)-1))
+        #   error short pos match need all short pos saved with the same bit count
+        #endif
         {// short pos match
-            for (TInt dict_pos=kShortPos;dict_pos>=0;dict_pos--){
-                TInt matchedString=curString-(dict_pos+1);
-                TInt curMinLcp=_sstr_eqLen(sstring.src_end,props.maxSaveLength,
-                                           sstring.src+matchedString,sstring.src+curString);
-                if (curMinLcp>=tuz_kMinDictMatchLen)
-                    _MatchedAt(false,dict_pos);
+            const tuz_byte* src=sstring.src;
+            TInt maxEnd=curString+(TInt)props.maxSaveLength;
+            if (maxEnd>(TInt)sstring.size()) maxEnd=(TInt)sstring.size();
+            tuz_byte matched[_kShortPosForLen+1];
+            size_t matchedCount=0;
+            size_t matchedBegin=0; //stop at a big match
+            for (TInt i=shortString+1;i<curString;++i){ //same byte chain
+                if (i<curString-(_kShortPosForLen+1)) i=curString-(_kShortPosForLen+1);
+                prevSameByte[i&127]=lastSameByte[src[i]];
+                lastSameByte[src[i]]=i;
             }
+            shortString=curString-1;
+            for (TInt pos=lastSameByte[src[curString]];pos>=curString-(kShortPos+1);
+                 pos=prevSameByte[pos&127]){
+                const TInt dict_pos=curString-(pos+1);
+                TInt eqEnd=shortEqEnd[dict_pos];
+                if (eqEnd<curString) eqEnd=curString;
+                while ((eqEnd<maxEnd)&&(src[eqEnd]==src[eqEnd-(dict_pos+1)]))
+                    ++eqEnd;
+                shortEqEnd[dict_pos]=eqEnd;
+                if (eqEnd-curString<tuz_kMinDictMatchLen) continue;
+                if (eqEnd-curString>=_k_kBMatchStep) matchedBegin=matchedCount;
+                matched[matchedCount++]=(tuz_byte)dict_pos;
+            }
+            //same cost for all short pos, so the smallest dict_pos wins each mLen
+            const size_t curSaveCost=cost[curi-1]+coder.getSavedDictPosBit<false>(kShortPos,isHaveData);
+            TInt maxEqLen=0;
+            for (size_t i=matchedBegin;i<matchedCount;++i){
+                const TInt dict_pos=matched[i];
+                const TInt curMinLcp=shortEqEnd[dict_pos]-curString;
+                maxEqLen=(curMinLcp>maxEqLen)?curMinLcp:maxEqLen;
+                for (TInt mLen=curMinLcp;mLen>=tuz_kMinDictMatchLen;--mLen){
+                    if (lenStamp[mLen]==(TUInt)curi) break;
+                    lenStamp[mLen]=(TUInt)curi;
+                    const size_t dictCost=curSaveCost+coder.getSavedDictLenBit<false>(mLen,dict_pos);
+                    const size_t ni=curi+mLen-1;
+                    const size_t cost_ni=cost[ni];
+                    if (dictCost<=cost_ni){
+                        cost[ni]=(TUInt)dictCost;
+                        matchLen[ni]=mLen;
+                        dictPos[ni]=(TPosInt)dict_pos;
+                    }else if (dictCost>cost_ni+4){
+                        break;
+                    }
+                }
+            }
+            (*out_maxMatchLen)=((size_t)maxEqLen>(*out_maxMatchLen))?maxEqLen:(*out_maxMatchLen);
+            if (maxEqLen>=_k_kBMatchStep) return;
             if (maxDictPos<=_kShortPosForLen) 
                 return;
         }
@@ -257,6 +301,11 @@ void TMatch::_initCost(std::vector<TUInt>& cost,size_t costSize){
     cost[0]=0;
     dictPos[0]=0;
     matchLen[0]=0;
+    shortEqEnd.assign(_kShortPosForLen+1,0);
+    prevSameByte.assign(128,-1);
+    lastSameByte.assign(256,-1);
+    shortString=-1;
+    lenStamp.assign(props.maxSaveLength+1,0);
 }
 void TMatch::_getCost(const tuz_byte* cur0){
     std::vector<TUInt> cost;
