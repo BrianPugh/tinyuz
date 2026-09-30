@@ -80,20 +80,29 @@ namespace _tuz_private{
             tuz_byte matched[_kShortPosForLen+1];
             size_t matchedCount=0;
             size_t matchedBegin=0; //stop at a big match
-            for (TInt i=shortString+1;i<curString;++i){ //same byte chain
-                if (i<curString-(_kShortPosForLen+1)) i=curString-(_kShortPosForLen+1);
+            TInt i=shortString+1;
+            if (i<curString-128){ i=curString-128; byteRunBegin=i; }
+            for (;i<curString;++i){ //same byte chain
+                if ((i>0)&&(src[i]!=src[i-1])) byteRunBegin=i;
                 prevSameByte[i&127]=lastSameByte[src[i]];
                 lastSameByte[src[i]]=i;
             }
             shortString=curString-1;
             for (TInt pos=lastSameByte[src[curString]];pos>=curString-(kShortPos+1);
                  pos=prevSameByte[pos&127]){
-                const TInt dict_pos=curString-(pos+1);
+                TInt dict_pos=curString-(pos+1);
                 TInt eqEnd=shortEqEnd[dict_pos];
                 if (eqEnd<curString) eqEnd=curString;
                 while ((eqEnd<maxEnd)&&(src[eqEnd]==src[eqEnd-(dict_pos+1)]))
                     ++eqEnd;
                 shortEqEnd[dict_pos]=eqEnd;
+                if ((dict_pos==0)&&(byteRunBegin<pos)){ //same eqEnd for all pos in the byte run
+                    pos=(byteRunBegin>curString-(kShortPos+1))?byteRunBegin:curString-(kShortPos+1);
+                    if (eqEnd-curString>=_k_kBMatchStep){ //the biggest one
+                        dict_pos=curString-(pos+1);
+                        shortEqEnd[dict_pos]=eqEnd;
+                    }
+                }
                 if (eqEnd-curString<tuz_kMinDictMatchLen) continue;
                 if (eqEnd-curString>=_k_kBMatchStep) matchedBegin=matchedCount;
                 matched[matchedCount++]=(tuz_byte)dict_pos;
@@ -305,6 +314,7 @@ void TMatch::_initCost(std::vector<TUInt>& cost,size_t costSize){
     prevSameByte.assign(128,-1);
     lastSameByte.assign(256,-1);
     shortString=-1;
+    byteRunBegin=0;
     lenStamp.assign(props.maxSaveLength+1,0);
 }
 void TMatch::_getCost(const tuz_byte* cur0){
