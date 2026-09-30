@@ -38,6 +38,7 @@ namespace _tuz_private{
         std::vector<TInt>           prevSameByte; //ring by pos: last pos with the same byte
         std::vector<TInt>           lastSameByte;
         TInt                        shortString; //chain is updated to it
+        TInt                        byteRunBegin; //src[byteRunBegin..shortString] same byte
         void _initMinDictLenBit();
         void _cost_match(const TInt curString,const size_t curi,
                          size_t* out_maxMatchLen,std::vector<TUInt>& cost);
