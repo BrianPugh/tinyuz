@@ -83,7 +83,13 @@ namespace _tuz_private{
             uint64_t va,vb;
             memcpy(&va,a+eqLen,8);
             memcpy(&vb,b+eqLen,8);
-            if (va!=vb) break;
+            if (va!=vb){
+            #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__)
+                return eqLen+(TInt)(_lowBit64(va^vb)>>3);
+            #else
+                break;
+            #endif
+            }
             eqLen+=8;
         }
         while ((eqLen<maxEqLen)&&(a[eqLen]==b[eqLen]))
