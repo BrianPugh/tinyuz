@@ -327,6 +327,14 @@ namespace _tuz_private{
         }
 
         {//match by LCP
+            {//skip if no pos in (kShortPos,maxDictPos] has the same first 2 bytes
+                const tuz_byte* src=sstring.src;
+                if (curString+1>=(TInt)sstring.size()) return;
+                for (;pairNext<curString-kShortPos-1;++pairNext)
+                    pairLast[src[pairNext]|(src[pairNext+1]<<8)]=pairNext;
+                const TInt lastPos=pairLast[src[curString]|(src[curString+1]<<8)];
+                if ((lastPos<0)||((size_t)(curString-lastPos)-1>maxDictPos)) return;
+            }
             TInt it_left=it_cur-1;
             const TInt it_left_end=-1;
             TInt it_right=it_cur+1;
