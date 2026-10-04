@@ -24,7 +24,8 @@ namespace _tuz_private{
                         const TTuzCode& _coder,const tuz_TCompressProps& _props)
         :sstring(data,data_end,(TLCPInt)_props.maxSaveLength,_props.threadNum), coder(_coder),
         props(_props),shortString(-1),shortGroupCount(0),
-        lenStamp(_props.maxSaveLength+1,0),lenStampCur(0){ _initMinDictLenBit(); }
+        lenStamp(_props.maxSaveLength+1,0),lenStampCur(0),
+        pairLast(1<<16,-1),pairNext(0){ _initMinDictLenBit(); }
         bool match(const tuz_byte** out_matched,size_t* out_match_len,
                    const tuz_byte* cur);
     private:
@@ -49,6 +50,8 @@ namespace _tuz_private{
         std::vector<TUInt>          lenStamp; //lenStamp[mLen]==lenStampCur: mLen done by a short pos match
         TUInt                       lenStampCur;
         std::vector<TUInt>          minDictLenBit; //min bit count of mLen for a LCP match
+        std::vector<TInt>           pairLast; //the last pos (dict_pos>kShortPos) of each first 2 bytes
+        TInt                        pairNext; //next pos to save in pairLast
         void _updateShortMatch(const TInt curString,const TInt kShortPos,uint64_t* out_mask);
         void _alignByteMask(tuz_byte v,TInt curString);
         void _addShortGroup(TInt eqEnd,bool isCapped,size_t dict_pos);

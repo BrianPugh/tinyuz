@@ -83,7 +83,13 @@ namespace _tuz_private{
             uint64_t va,vb;
             memcpy(&va,a+eqLen,8);
             memcpy(&vb,b+eqLen,8);
-            if (va!=vb) break;
+            if (va!=vb){
+            #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__)
+                return eqLen+(TInt)(_lowBit64(va^vb)>>3);
+            #else
+                break;
+            #endif
+            }
             eqLen+=8;
         }
         while ((eqLen<maxEqLen)&&(a[eqLen]==b[eqLen]))
@@ -195,6 +201,15 @@ namespace _tuz_private{
             }
             TInt maxEqLen=srcSize-curString;
             if (maxEqLen>maxSaveLength) maxEqLen=maxSaveLength;
+            if (maxEqLen>=tuz_kMinDictMatchLen){ //keep short pos with the next byte equal too
+                const tuz_byte nextByte=src[curString+1];
+                uint64_t m[2]={shortByteMask[nextByte][0],shortByteMask[nextByte][1]};
+                _shl128(m,(size_t)(curString+1-shortByteMaskString[nextByte]));
+                m[0]|=(curByte==nextByte)?1:0;
+                fresh[0]&=m[0]; fresh[1]&=m[1];
+            }else{
+                fresh[0]=0; fresh[1]=0;
+            }
             const tuz_byte* curStr=src+curString;
             for (size_t w=2;(w--)>0;){
                 while (fresh[w]){
@@ -205,9 +220,8 @@ namespace _tuz_private{
                         break;
                     }
                     const tuz_byte* matchedStr=curStr-(dict_pos+1);
-                    const TInt eqLen=_getEqLen(curStr,matchedStr,1,maxEqLen);
-                    if (eqLen>=tuz_kMinDictMatchLen)
-                        _addShortGroup(curString+eqLen,eqLen>=maxSaveLength,dict_pos);
+                    const TInt eqLen=_getEqLen(curStr,matchedStr,2,maxEqLen);
+                    _addShortGroup(curString+eqLen,eqLen>=maxSaveLength,dict_pos);
                     if (eqLen>=_k_kBMatchStep){
                         bigDictPos=(TInt)dict_pos;
                         fresh[0]=0; fresh[1]=0;
@@ -313,6 +327,14 @@ namespace _tuz_private{
         }
 
         {//match by LCP
+            {//skip if no pos in (kShortPos,maxDictPos] has the same first 2 bytes
+                const tuz_byte* src=sstring.src;
+                if (curString+1>=(TInt)sstring.size()) return;
+                for (;pairNext<curString-kShortPos-1;++pairNext)
+                    pairLast[src[pairNext]|(src[pairNext+1]<<8)]=pairNext;
+                const TInt lastPos=pairLast[src[curString]|(src[curString+1]<<8)];
+                if ((lastPos<0)||((size_t)(curString-lastPos)-1>maxDictPos)) return;
+            }
             TInt it_left=it_cur-1;
             const TInt it_left_end=-1;
             TInt it_right=it_cur+1;
